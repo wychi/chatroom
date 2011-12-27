@@ -67,6 +67,15 @@ app.get('/logout', function(req,res) {
 });
 
 io.set('authorization', function(data, accept) {
+  // THIS IS A BACKDOOR FOR TESTING.
+  // RIGHT NOW, socket.io-client DOES NOT ALLOWED YOU TO PASS COOKIE.
+  // REMOVE IT, IF YOU ARE IN PRODUCTION ENVIRONMENT.
+  if(data.query.user) {
+    data.session = {};
+    data.session.auth = {user: data.query.user}
+    return accept(null, true);
+  }
+  // END OF BACKDOOR
   if (data.headers.cookie) {
     data.cookie = parseCookie(data.headers.cookie);
     data.sessionID = data.cookie['express.sid'];
@@ -79,6 +88,7 @@ io.set('authorization', function(data, accept) {
         // save the session data and accept the connection
         if( session.auth && session.auth.user ) {
           data.session = session;
+          console.log('okok');
           accept(null, true);
         } else {
           accept('not a registered user', false);
@@ -93,8 +103,8 @@ io.set('authorization', function(data, accept) {
 io.sockets.on('connection', function(socket) {
   var user = socket.handshake.session.auth.user
   socket.emit('system', "welcome! " + user);
-  socket.on('disconnect', function(data, fn) {
-    console.log('on disconnect. data:%s, fn:%s', data, fn );
+  socket.on('disconnect', function() {
+    console.log('on disconnect.');
   });
 
   socket.on('message', function(data, fn) {
