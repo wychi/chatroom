@@ -1,2 +1,19 @@
 h1= title
-p Welcome to #{title}
+div
+  span Current user: #{user}
+  span
+    form(method='GET', ACTION="/login")
+      span Login As
+      span
+        input(type="text", name='user', placeholder="YOUR NAME")
+      span
+        input(type="submit")
+
+script(src="/socket.io/socket.io.js")
+script
+  var socket = io.connect('http://localhost:3000');
+  socket.on('connect', function (data) {
+    console.log('connected');
+  }).on('system', function(data) {
+    console.log('[%s] %s', 'system', data);
+  });
