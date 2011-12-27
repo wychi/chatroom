@@ -2,22 +2,17 @@ var io = require('socket.io-client')
   , Q = require('q')
 var TIMEOUT = 1000;
 
+function async_it(name, cb) {
+  var done = false
+    , deferred = Q.defer()
+  Q.when(deferred.promise, function() { done = true; });
+  waitsFor(function() { return done; }, "completed", TIMEOUT);
+  runs(function() {});
+
+  cb(deferred);
+}
+
 describe("chatroom", function() {
-  function async_it(name, cb) {
-    var done = false
-      , deferred = Q.defer()
-
-    Q.when(deferred.promise, function() { done = true; });
-    waitsFor(function() {
-      return done;
-    }, "completed", TIMEOUT);
-
-    runs(function() {
-    });
-
-    cb(deferred);
-  }
-
   it('connect', function(){
     async_it('connect', function(deferred) {
       var socket = io.connect('http://localhost:3000/?user=user1'
@@ -100,5 +95,219 @@ describe("chatroom", function() {
         })
       });
     })
+  });
+});
+
+describe("join room.", function() {
+  it('client can speak to a room only after he join that room.', function(){
+    async_it('private room', function(deferred) {
+      var socket = io.connect('http://localhost:3000/?user=probe'
+                             , {'force new connection': true })
+      socket.on('connect', function() {
+        var msg = {
+          room: 'protoss'
+          , sender:'probe'
+          , msg:'greeting' }
+        socket.emit('speak', msg, function(err) {
+          expect(err).toBeTruthy();
+          expect(err.error).toEqual('403');
+          socket.disconnect();
+        });
+      }).on('disconnect', function() {
+        deferred.resolve();
+      });
+    });
+  });
+  it('clients in the room can receive room\'s messages.', function(){
+    async_it('join room', function(deferred) {
+      var d = Q.defer()
+        , join1 = Q.defer()
+        , join2 = Q.defer()
+        , end = Q.defer()
+        , socket = io.connect('http://localhost:3000/?user=probe'
+                             , {'force new connection': true })
+        , socket2 = io.connect('http://localhost:3000/?user=zealot'
+                             , {'force new connection': true })
+      socket.on('connect', function() {
+        socket.emit('join', 'protoss', join1.resolve);
+      })
+      socket2.on('connect', function() {
+        socket2.emit('join', 'protoss', join2.resolve);
+      })
+
+      Q.when(join1.promise, function() {
+        Q.when(join2.promise, function() {
+          var msg = {
+            room: 'protoss'
+            , sender:'probe'
+            , msg:'greeting' }
+          socket2.once('speak', function(data) {
+            expect(data).toEqual(msg);
+            end.resolve();
+          });
+          socket.emit('speak', msg);
+        })
+      });
+
+      Q.when(end.promise, function() {
+        socket.disconnect();
+        socket2.disconnect();
+
+        deferred.resolve();
+      });
+    });
+  });
+
+  it('client should not receive message anymore after leave.', function(){
+    async_it('leave room', function(deferred) {
+      var d = Q.defer()
+        , join1 = Q.defer()
+        , join2 = Q.defer()
+        , step1 = Q.defer()
+        , step2 = Q.defer()
+        , end = Q.defer()
+        , socket = io.connect('http://localhost:3000/?user=probe'
+                             , {'force new connection': true })
+        , socket2 = io.connect('http://localhost:3000/?user=zealot'
+                             , {'force new connection': true })
+      socket.on('connect', function() {
+        socket.emit('join', 'protoss', join1.resolve);
+      })
+      socket2.on('connect', function() {
+        socket2.emit('join', 'protoss', join2.resolve);
+      })
+
+      Q.when(join1.promise, function() {
+        Q.when(join2.promise, function() {
+          var msg = {
+            room: 'protoss'
+            , sender:'probe'
+            , msg:'greeting' }
+          socket2.once('speak', function(data) {
+            expect(data).toEqual(msg);
+            step1.resolve();
+          });
+          socket.emit('speak', msg);
+        })
+      });
+
+      Q.when(step1.promise, function() {
+        socket2.emit('leave', 'protoss', step2.resolve);
+      });
+      Q.when(step2.promise, function() {
+        var msg = {
+          room: 'protoss'
+          , sender:'probe'
+          , msg:'greeting' }
+        socket2.once('speak', function(data) {
+          // SHOULD NOT BE CALLED
+          expect(false).toBeTruthy();
+        });
+        socket.emit('speak', msg, function() {
+          // NO IMPLICIT WAY TO KNOW IF SOCKET2 WILL GET MESSAGE OR NOT.
+          setTimeout(end.resolve, 300);
+        });
+      });
+
+      Q.when(end.promise, function() {
+        socket.disconnect();
+        socket2.disconnect();
+
+        deferred.resolve();
+      });
+    });
+  });
+
+  it('only room\'s members can join.', function(){
+    async_it('private room', function(deferred) {
+      var socket = io.connect('http://localhost:3000/?user=probe'
+                             , {'force new connection': true })
+      socket.on('connect', function() {
+
+        socket.emit('join', 'zerg', function(err) {
+          expect(err).toBeTruthy();
+          expect(err.error).toEqual('403');
+
+          socket.disconnect();
+        });
+      }).on('disconnect', function() {
+        deferred.resolve();
+      });
+    });
+  });
+
+  it('private room messages should not be received by outsider', function(){
+    async_it('private room', function(deferred) {
+      var socket = io.connect('http://localhost:3000/?user=probe'
+                             , {'force new connection': true })
+        , socket2 = io.connect('http://localhost:3000/?user=zealot'
+                             , {'force new connection': true })
+        , socket3 = io.connect('http://localhost:3000/?user=drone'
+                             , {'force new connection': true })
+        , socket4 = io.connect('http://localhost:3000/?user=marine'
+                             , {'force new connection': true })
+        , join1 = Q.defer(), join2 = Q.defer(), join3 = Q.defer()
+        , join4 = Q.defer(), step1 = Q.defer(), end = Q.defer()
+
+      // wait for all clients connected
+      socket.on('connect', function() {
+        socket.emit('join', 'protoss', join1.resolve);
+      });
+      socket2.on('connect', function() {
+        socket2.emit('join', 'protoss', join2.resolve);
+      });
+      socket3.on('connect', function() {
+        socket3.emit('join', 'zerg', join3.resolve);
+      });
+      socket4.on('connect', join4.resolve);
+
+      Q.when(join1.promise, function() {
+        Q.when(join2.promise, function() {
+          Q.when(join3.promise, function() {
+            Q.when(join4.promise, function() {
+              step1.resolve();
+            })
+          })
+        })
+      });
+      // start to do private chat room speak.
+      Q.when(step1.promise, function() {
+        var msg = {
+          room: 'protoss'
+          , sender:'probe'
+          , msg:'greeting' }
+        var received = false;
+        var compromised = false;
+        socket2.once('speak', function(data) {
+          console.dir(data);
+          expect(data).toEqual(msg);
+          received = true;
+        });
+        socket3.once('speak', function(data) {
+          expect(false).toBeTruthy();
+          compromised = true;
+        });
+        socket4.once('speak', function(data) {
+          expect(false).toBeTruthy();
+          compromised = true;
+        });
+        socket.emit('speak', msg, function() {
+          // NO IMPLICIT WAY TO KNOW IF OTHERS WILL GET MESSAGE OR NOT.
+          setTimeout(function() {
+            expect(received).toBeTruthy();
+            expect(compromised).toBeFalsy();
+            end.resolve();
+          }, 300);
+        });
+      });
+      Q.when(end.promise, function() {
+        socket.disconnect();
+        socket2.disconnect();
+        socket3.disconnect();
+        socket4.disconnect();
+
+        deferred.resolve();
+      });
+    });
   });
 });

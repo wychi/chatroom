@@ -100,6 +100,18 @@ io.set('authorization', function(data, accept) {
   }
 });
 
+// predefined rooms
+var rooms = {
+  protoss: {
+    name: 'protoss'
+    , members: ['probe', 'zealot']
+    }
+  , zerg: {
+    name: 'zerg'
+    , members: ['drone', 'zergling']
+    }
+}
+
 io.sockets.on('connection', function(socket) {
   var user = socket.handshake.session.auth.user
   socket.emit('system', "welcome! " + user);
@@ -116,6 +128,52 @@ io.sockets.on('connection', function(socket) {
   socket.on('public_chat', function(data, fn) {
     console.log('on public_chat. data:%s, fn:%s', data, fn );
     socket.broadcast.emit('public_chat', data)
+    if(fn) fn();
+  });
+
+  socket.on('join', function(roomId, fn) {
+    console.log('on join ' + socket.id);
+    var user = socket.handshake.session.auth.user;
+    if(!user) {
+      return fn ? fn({error:'403', reason: 'not login'}) : undefined;
+    }
+    console.log(user+ ' try to join ' + roomId);
+    if(!rooms[roomId])
+      return fn ? fn({error:'403', reason: 'room not exist'}) : undefined;
+
+    if(rooms[roomId].members.indexOf(user)==-1) {
+      return fn ? fn({error:'403', reasion: 'Not allowed'}) : undefined;
+    }
+
+    socket.join(roomId);
+    if(fn) fn();
+    console.log('%s enter room %s', user, roomId);
+
+    socket.broadcast.to(roomId).send(user + ' enter room');
+  });
+
+  socket.on('leave', function(roomId, fn) {
+    var user = socket.handshake.session.auth.user;
+    socket.leave(roomId);
+    if(fn) fn();
+    console.log('%s leave room %s', user, roomId);
+  });
+
+  socket.on('speak', function(data, fn) {
+    var user = socket.handshake.session.auth.user;
+    if(!user) {
+      return fn ? fn({error:'403'}) : undefined;
+    }
+
+    var room = io.sockets.manager.rooms['/'+data.room];
+    if(!room) {
+      return fn ? fn({error:'403', reason: 'room not exist'}) : undefined;
+    } else if(room && room.indexOf(socket.id)==-1) {
+      return fn ? fn({error:'403', reason: 'not join room'}) : undefined;
+    }
+
+    console.log('broadcast to group member');
+    socket.broadcast.to(data.room).emit('speak', data);
     if(fn) fn();
   });
 });
