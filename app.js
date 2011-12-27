@@ -34,5 +34,24 @@ app.configure('production', function(){
 
 app.get('/', routes.index);
 
+io.sockets.on('connection', function(socket) {
+  socket.send("welcome!");  
+  socket.on('disconnect', function(data, fn) {
+    console.log('on disconnect. data:%s, fn:%s', data, fn );
+  });
+  
+  socket.on('message', function(data, fn) {
+    console.log('on message. data:%s, fn:%s', data, fn );
+    if(fn) fn();
+  });
+
+  // custom events  
+  socket.on('public_chat', function(data, fn) {
+    console.log('on public_chat. data:%s, fn:%s', data, fn );
+    socket.broadcast.emit('public_chat', data)
+    if(fn) fn();
+  });
+});
+
 app.listen(3000);
 console.log("Express server listening on port %d in %s mode", app.address().port, app.settings.env);
